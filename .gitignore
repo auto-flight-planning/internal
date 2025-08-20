@@ -1,0 +1,19 @@
+# Generated data files (프로젝트 핵심 제외 항목)
+output/
+*.xlsx
+*.json
+
+# Python virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db 
