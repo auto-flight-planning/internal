@@ -53,15 +53,33 @@ class CandidateDataGenerator:
             "ノイバイ": "HAN", "タンソンニャット": "SGN"
         }
         
-        # 공항별 기본 비행시간 (분)
-        self.flight_times = {
-            ("羽田", "仁川"): 120, ("成田", "仁川"): 120,
-            ("関西", "仁川"): 110, ("中部", "仁川"): 130,
-            ("福岡", "仁川"): 90, ("那覇", "済州"): 100,
-            ("羽田", "北京大興"): 240, ("成田", "首都"): 240,
-            ("関西", "浦東"): 180, ("中部", "白雲"): 200,
-            ("福岡", "桃園"): 150, ("那覇", "赤鱲角"): 180
+        # 공항별 대략적인 좌표 (위도, 경도) - 거리 계산용
+        self.airport_coordinates = {
+            # 일본 공항들
+            "羽田": (35.6762, 139.6503), "成田": (35.6762, 140.3863),
+            "関西": (34.4273, 135.2441), "中部": (34.8584, 136.8054),
+            "福岡": (33.5902, 130.4017), "那覇": (26.2124, 127.6809),
+            "新千歳": (42.7752, 141.6928),
+            
+            # 한국 공항들
+            "仁川": (37.4602, 126.4407), "済州": (33.5112, 126.4930),
+            
+            # 중국 공항들
+            "北京大興": (39.5098, 116.4105), "首都": (39.9088, 116.3975),
+            "浦東": (31.1443, 121.8083), "白雲": (23.3924, 113.2988),
+            
+            # 대만 공항들
+            "桃園": (25.0800, 121.2320),
+            
+            # 동남아시아 공항들
+            "赤鱲角": (22.3080, 113.9185), "マカオ": (22.1566, 113.5589),
+            "スワンナプーム": (13.6900, 100.7501), "ドンムアン": (13.9126, 100.6068),
+            "チャンギ": (1.3644, 103.9915), "クアラルンプール": (2.7456, 101.7072),
+            "ノイバイ": (21.2214, 105.8074), "タンソンニャット": (10.8189, 106.6519)
         }
+        
+        # 공항별 기본 비행시간 (30분 단위로 깔끔하게)
+        self.flight_times = {}
         
         # 출발시각 설정 (7시~22시, 30분 간격) - 31개 시간대
         self.departure_times = []
@@ -90,7 +108,54 @@ class CandidateDataGenerator:
         month = np.random.choice(list(self.month_days.keys()))
         max_days = self.month_days[month]
         return month, max_days
+    
+    def calculate_distance(self, airport1: str, airport2: str) -> float:
+        """두 공항 간의 거리 계산 (km) - Haversine 공식 사용"""
+        if airport1 not in self.airport_coordinates or airport2 not in self.airport_coordinates:
+            return 1000.0  # 기본값
         
+        lat1, lon1 = self.airport_coordinates[airport1]
+        lat2, lon2 = self.airport_coordinates[airport2]
+        
+        # Haversine 공식으로 거리 계산
+        R = 6371  # 지구 반지름 (km)
+        dlat = np.radians(lat2 - lat1)
+        dlon = np.radians(lon2 - lon1)
+        a = (np.sin(dlat/2)**2 + 
+             np.cos(np.radians(lat1)) * np.cos(np.radians(lat2)) * np.sin(dlon/2)**2)
+        c = 2 * np.arcsin(np.sqrt(a))
+        distance = R * c
+        
+        return distance
+    
+    def calculate_flight_time(self, departure: str, arrival: str) -> int:
+        """거리 기반으로 비행시간 계산 (30분 단위로 반올림)"""
+        # 이미 계산된 비행시간이 있으면 반환
+        route_key = (departure, arrival)
+        if route_key in self.flight_times:
+            return self.flight_times[route_key]
+        
+        # 거리 계산
+        distance = self.calculate_distance(departure, arrival)
+        
+        # 거리에 따른 비행시간 계산 (평균 속도 800km/h 가정)
+        # 실제로는 바람, 고도 등에 따라 달라지지만 여기서는 단순화
+        flight_time_hours = distance / 800.0
+        
+        # 30분 단위로 반올림 (분 단위)
+        flight_time_minutes = round(flight_time_hours * 60 / 30) * 30
+        
+        # 최소/최대 비행시간 제한
+        if flight_time_minutes < 30:
+            flight_time_minutes = 30
+        elif flight_time_minutes > 480:  # 8시간
+            flight_time_minutes = 480
+        
+        # 계산된 비행시간 저장 (다음번에 재사용)
+        self.flight_times[route_key] = flight_time_minutes
+        
+        return flight_time_minutes
+    
     def load_airline_data(self, airline_id: str) -> Tuple[Dict, Dict]:
         """항공사별 internal_resource_data.json과 profile.py 로드"""
         try:
@@ -498,8 +563,7 @@ class CandidateDataGenerator:
                     )
                     
                     # 비행시간 계산 (기본값 또는 저장된 값)
-                    flight_time = self.flight_times.get((route["departure"], route["arrival"]), 
-                                                      np.random.randint(90, 300))
+                    flight_time = self.calculate_flight_time(route["departure"], route["arrival"])
                     flight_time_str = f"{flight_time}分"
                     
                     # 최적수익 계산
@@ -534,6 +598,7 @@ class CandidateDataGenerator:
                         "到着国家": route["arrival_country"],
                         "到着空港": route["arrival"],
                         "出発時刻": departure_time,
+                        "飛行時間": flight_time,  # 비행시간 추가 (분 단위)
                         "推奨最大運航数": max_operations,
                         "収益(円)": optimal_data["収益(円)"],
                         "価格(円)": optimal_data["価格(円)"],
