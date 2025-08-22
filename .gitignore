@@ -1,5 +1,5 @@
 # Generated data files (프로젝트 핵심 제외 항목)
-output/
+output/*/analytics_data/candidate/
 *.xlsx
 *.json
 
