@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import sys
 import os
+import shutil
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Any
 
@@ -181,57 +182,113 @@ class CandidateDataGenerator:
     
     def generate_routes(self, airline_profile: Dict) -> List[Dict]:
         """항공사별 연계공항 및 노선 생성"""
-        print(f"🛫 {airline_profile['route_count_range']}개 노선 생성 중...")
+        print(f"🛫 연계공항 {airline_profile['connected_airports']}개 기반으로 모든 가능한 노선 생성 중...")
         
         routes = []
-        route_count = np.random.randint(*airline_profile["route_count_range"])
+        connected_airports = airline_profile["connected_airports"]
         
         # 일본 공항들을 중심으로 노선 생성
         japan_airports = self.airports["日本"]
         other_countries = [k for k in self.airports.keys() if k != "日本"]
         
-        # 국제선 생성 (일본 ↔ 해외)
-        international_count = int(route_count * 0.6)  # 60%는 국제선
-        for _ in range(international_count):
-            japan_airport = np.random.choice(japan_airports)
-            other_country = np.random.choice(other_countries)
-            other_airport = np.random.choice(self.airports[other_country])
-            
-            # 일본 출발 노선
-            routes.append({
-                "departure": japan_airport,
-                "arrival": other_airport,
-                "departure_country": "日本",
-                "arrival_country": other_country,
-                "type": "international",
-                "direction": "departure"  # 일본 출발
-            })
-            
-            # 외국 출발 노선 (일본 도착)
-            routes.append({
-                "departure": other_airport,
-                "arrival": japan_airport,
-                "departure_country": other_country,
-                "arrival_country": "日本",
-                "type": "international",
-                "direction": "arrival"   # 일본 도착
-            })
+        # international_focus 비율에 따라 일본공항수와 외국공항수 결정
+        international_ratio = airline_profile["international_focus"]
+        domestic_ratio = airline_profile["domestic_focus"]
         
-        # 국내선 생성 (일본 ↔ 일본)
-        domestic_count = route_count - international_count
-        for _ in range(domestic_count):
-            airport1, airport2 = np.random.choice(japan_airports, 2, replace=False)
-            routes.append({
-                "departure": airport1,
-                "arrival": airport2,
-                "departure_country": "日本",
-                "arrival_country": "日本",
-                "type": "domestic",
-                "direction": "both"      # 국내선은 양방향
-            })
+        # 연계공항수를 일본공항수와 외국공항수로 분배
+        # 예: connected_airports=18, international_focus=0.7이면
+        # 일본공항수 = 18 * 0.3 = 5.4 → 5개
+        # 외국공항수 = 18 * 0.7 = 12.6 → 13개
+        japan_count = max(1, int(connected_airports * domestic_ratio))
+        foreign_count = connected_airports - japan_count
         
-        print(f"✅ {len(routes)}개 노선 생성 완료")
+        # 실제 사용 가능한 공항 수를 초과하지 않도록 조정
+        japan_count = min(japan_count, len(japan_airports))
+        total_foreign_airports = sum(len(self.airports[country]) for country in other_countries)
+        foreign_count = min(foreign_count, total_foreign_airports)
+        
+        print(f"   - 일본 공항: {japan_count}개")
+        print(f"   - 외국 공항: {foreign_count}개")
+        
+        # 실제 사용할 공항들 선택
+        selected_japan_airports = np.random.choice(japan_airports, japan_count, replace=False)
+        
+        # 외국 공항들 선택 (국가별로 균등하게)
+        selected_foreign_airports = []
+        for country in other_countries:
+            country_airports = self.airports[country]
+            # 각 국가에서 선택할 공항 수 계산
+            country_count = max(1, int(foreign_count * len(country_airports) / total_foreign_airports))
+            if country_count <= len(country_airports):
+                selected = np.random.choice(country_airports, country_count, replace=False)
+                selected_foreign_airports.extend(selected)
+        
+        # 외국 공항 수가 부족하면 추가 선택
+        while len(selected_foreign_airports) < foreign_count:
+            country = np.random.choice(other_countries)
+            country_airports = self.airports[country]
+            available = [ap for ap in country_airports if ap not in selected_foreign_airports]
+            if available:
+                selected_foreign_airports.append(np.random.choice(available))
+        
+        # 정확한 수로 맞추기
+        if len(selected_foreign_airports) > foreign_count:
+            selected_foreign_airports = selected_foreign_airports[:foreign_count]
+        
+        print(f"   - 선택된 일본 공항: {selected_japan_airports}")
+        print(f"   - 선택된 외국 공항: {selected_foreign_airports}")
+        
+        # 국제선 생성: 모든 일본공항 × 모든 외국공항 조합
+        international_routes = []
+        for japan_ap in selected_japan_airports:
+            for foreign_ap in selected_foreign_airports:
+                # 일본 출발 노선
+                international_routes.append({
+                    "departure": japan_ap,
+                    "arrival": foreign_ap,
+                    "departure_country": "日本",
+                    "arrival_country": self.get_country_by_airport(foreign_ap),
+                    "type": "international",
+                    "direction": "departure"  # 일본 출발
+                })
+                
+                # 외국 출발 노선 (일본 도착)
+                international_routes.append({
+                    "departure": foreign_ap,
+                    "arrival": japan_ap,
+                    "departure_country": self.get_country_by_airport(foreign_ap),
+                    "arrival_country": "日本",
+                    "type": "international",
+                    "direction": "arrival"   # 일본 도착
+                })
+        
+        # 국내선 생성: 모든 일본공항 × (일본공항-1) / 2 조합 (중복 제거)
+        domestic_routes = []
+        for i, ap1 in enumerate(selected_japan_airports):
+            for ap2 in selected_japan_airports[i+1:]:
+                domestic_routes.append({
+                    "departure": ap1,
+                    "arrival": ap2,
+                    "departure_country": "日本",
+                    "arrival_country": "日本",
+                    "type": "domestic",
+                    "direction": "both"      # 국내선은 양방향
+                })
+        
+        routes = international_routes + domestic_routes
+        
+        print(f"✅ 총 {len(routes)}개 노선 생성 완료")
+        print(f"   - 국제선: {len(international_routes)}개")
+        print(f"   - 국내선: {len(domestic_routes)}개")
+        
         return routes
+    
+    def get_country_by_airport(self, airport: str) -> str:
+        """공항명으로 국가명 찾기"""
+        for country, airports in self.airports.items():
+            if airport in airports:
+                return country
+        return "不明"  # 기본값
     
     def generate_demand_function(self, airline_profile: Dict, route_type: str, 
                                 departure_time: str) -> Dict:
@@ -639,63 +696,63 @@ class CandidateDataGenerator:
         return result
     
     def save_candidate_data(self, airline_id: str, data_sets: Dict[str, pd.DataFrame]):
-        """운항후보 데이터를 Excel로 저장 (국제선/국내선 분리)"""
+        """운항후보 데이터를 Excel로 저장 (국제선/국내선 분리 + 통합)"""
         print(f"💾 {airline_id} 데이터 저장 시작...")
         
-        # 국제선 출발 데이터 저장
-        if not data_sets["international_departure"].empty:
-            departure_path = os.path.join(
-                self.output_dir, airline_id, "analytics_data", "candidate", "international", 
-                "international_departure.xlsx"
-            )
-            with pd.ExcelWriter(departure_path, engine='openpyxl') as writer:
-                data_sets["international_departure"].to_excel(writer, sheet_name='運航候補データ', index=False)
-            print(f"✅ 국제선 출발 데이터 저장: {departure_path} ({len(data_sets['international_departure'])}건)")
+        # 필요한 폴더들 생성
+        base_path = os.path.join(self.output_dir, airline_id, "analytics_data", "candidate")
+        consolidated_path = os.path.join(base_path, "consolidated")
         
-        # 국제선 도착 데이터 저장
-        if not data_sets["international_arrival"].empty:
-            arrival_path = os.path.join(
-                self.output_dir, airline_id, "analytics_data", "candidate", "international", 
-                "international_arrival.xlsx"
-            )
-            with pd.ExcelWriter(arrival_path, engine='openpyxl') as writer:
-                data_sets["international_arrival"].to_excel(writer, sheet_name='運航候補データ', index=False)
-            print(f"✅ 국제선 도착 데이터 저장: {arrival_path} ({len(data_sets['international_arrival'])}건)")
+        # 기본 폴더 생성
+        os.makedirs(base_path, exist_ok=True)
+        os.makedirs(consolidated_path, exist_ok=True)
         
-        # 국내선 데이터 저장
+        # 국제선 데이터가 있는 경우에만 international 폴더 생성 및 저장
+        if not data_sets["international_departure"].empty or not data_sets["international_arrival"].empty:
+            international_path = os.path.join(base_path, "international")
+            os.makedirs(international_path, exist_ok=True)
+            
+            # 국제선 출발 데이터 저장
+            if not data_sets["international_departure"].empty:
+                departure_path = os.path.join(international_path, "international_departure.xlsx")
+                with pd.ExcelWriter(departure_path, engine='openpyxl') as writer:
+                    data_sets["international_departure"].to_excel(writer, sheet_name='運航候補データ', index=False)
+                print(f"✅ 국제선 출발 데이터 저장: {departure_path} ({len(data_sets['international_departure'])}건)")
+            
+            # 국제선 도착 데이터 저장
+            if not data_sets["international_arrival"].empty:
+                arrival_path = os.path.join(international_path, "international_arrival.xlsx")
+                with pd.ExcelWriter(arrival_path, engine='openpyxl') as writer:
+                    data_sets["international_arrival"].to_excel(writer, sheet_name='運航候補データ', index=False)
+                print(f"✅ 국제선 도착 데이터 저장: {arrival_path} ({len(data_sets['international_arrival'])}건)")
+        
+        # 국내선 데이터가 있는 경우에만 domestic 폴더 생성 및 저장
         if not data_sets["domestic"].empty:
-            domestic_path = os.path.join(
-                self.output_dir, airline_id, "analytics_data", "candidate", "domestic", 
-                "domestic_all.xlsx"
-            )
+            domestic_path = os.path.join(base_path, "domestic")
+            os.makedirs(domestic_path, exist_ok=True)
+            
+            domestic_path = os.path.join(domestic_path, "domestic_all.xlsx")
             with pd.ExcelWriter(domestic_path, engine='openpyxl') as writer:
                 data_sets["domestic"].to_excel(writer, sheet_name='運航候補データ', index=False)
             print(f"✅ 국내선 데이터 저장: {domestic_path} ({len(data_sets['domestic'])}건)")
         
+        # 통합 데이터 생성 및 저장 (실제 데이터가 있는 것만)
+        all_data = []
+        if not data_sets["international_departure"].empty:
+            all_data.append(data_sets["international_departure"])
+        if not data_sets["international_arrival"].empty:
+            all_data.append(data_sets["international_arrival"])
+        if not data_sets["domestic"].empty:
+            all_data.append(data_sets["domestic"])
+        
+        if all_data:
+            consolidated_df = pd.concat(all_data, ignore_index=True)
+            consolidated_path = os.path.join(consolidated_path, "consolidated_all.xlsx")
+            with pd.ExcelWriter(consolidated_path, engine='openpyxl') as writer:
+                consolidated_df.to_excel(writer, sheet_name='運航候補データ', index=False)
+            print(f"✅ 통합 데이터 저장: {consolidated_path} ({len(consolidated_df)}건)")
+        
         print(f"🎉 {airline_id} 모든 데이터 저장 완료!")
-    
-    def generate_all_airlines(self):
-        """모든 항공사별 운항후보 데이터 생성"""
-        print("🚀 모든 항공사 운항후보 데이터 생성 시작...")
-        
-        for airline_id in self.airlines:
-            try:
-                print(f"\n{'='*50}")
-                print(f"📊 {airline_id} 처리 중...")
-                print(f"{'='*50}")
-                
-                # 데이터 생성
-                data_sets = self.generate_candidate_data(airline_id)
-                
-                # 저장
-                if data_sets is not None:
-                    self.save_candidate_data(airline_id, data_sets)
-                
-            except Exception as e:
-                print(f"❌ Error processing {airline_id}: {e}")
-                continue
-        
-        print("\n🎉 모든 항공사 데이터 생성 완료!")
 
 def main():
     """메인 함수"""
@@ -704,19 +761,35 @@ def main():
     generator = CandidateDataGenerator()
     
     # 명령행 인수 확인
-    if len(sys.argv) > 1:
-        airline_id = sys.argv[1]
-        if airline_id in generator.airlines:
-            print(f"🚀 {airline_id} 단일 항공사 데이터 생성 시작...")
-            data_sets = generator.generate_candidate_data(airline_id)
-            if data_sets is not None:
-                generator.save_candidate_data(airline_id, data_sets)
-        else:
-            print(f"❌ 잘못된 항공사 ID: {airline_id}")
-            print(f"사용 가능한 항공사: {', '.join(generator.airlines)}")
+    if len(sys.argv) != 2:
+        print("❌ 사용법: python generate_candidate_data.py <항공사ID>")
+        print(f"사용 가능한 항공사: {', '.join(generator.airlines)}")
+        print("예시: python generate_candidate_data.py airline_01")
+        sys.exit(1)
+    
+    airline_id = sys.argv[1]
+    if airline_id not in generator.airlines:
+        print(f"❌ 잘못된 항공사 ID: {airline_id}")
+        print(f"사용 가능한 항공사: {', '.join(generator.airlines)}")
+        sys.exit(1)
+    
+    print(f"🚀 {airline_id} 단일 항공사 데이터 생성 시작...")
+    
+    # 해당 항공사의 candidate 폴더 삭제
+    candidate_path = os.path.join(generator.output_dir, airline_id, "analytics_data", "candidate")
+    if os.path.exists(candidate_path):
+        print(f"🗑️ 기존 {airline_id} candidate 폴더 삭제 중...")
+        shutil.rmtree(candidate_path)
+        print(f"✅ {airline_id} candidate 폴더 삭제 완료")
+    
+    # 데이터 생성 및 저장
+    data_sets = generator.generate_candidate_data(airline_id)
+    if data_sets is not None:
+        generator.save_candidate_data(airline_id, data_sets)
+        print(f"🎉 {airline_id} 데이터 생성 완료!")
     else:
-        print("🚀 모든 항공사 데이터 생성 시작...")
-        generator.generate_all_airlines()
+        print(f"❌ {airline_id} 데이터 생성 실패")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main() 
