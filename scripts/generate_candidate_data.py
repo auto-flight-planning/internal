@@ -699,42 +699,29 @@ class CandidateDataGenerator:
         """운항후보 데이터를 Excel로 저장 (국제선/국내선 분리 + 통합)"""
         print(f"💾 {airline_id} 데이터 저장 시작...")
         
-        # 필요한 폴더들 생성
-        base_path = os.path.join(self.output_dir, airline_id, "analytics_data", "candidate")
-        consolidated_path = os.path.join(base_path, "consolidated")
+        # CSV 파일로 저장
+        departure_path = os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "international_departure.csv")
+        arrival_path = os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "international_arrival.csv")
+        domestic_path = os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "domestic.csv")
+        consolidated_path = os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "consolidated", "consolidated_candidate_data.csv")
         
-        # 기본 폴더 생성
-        os.makedirs(base_path, exist_ok=True)
-        os.makedirs(consolidated_path, exist_ok=True)
+        # analytics_data/candidate 폴더가 없으면 생성
+        os.makedirs(os.path.dirname(departure_path), exist_ok=True)
+        os.makedirs(os.path.dirname(arrival_path), exist_ok=True)
+        os.makedirs(os.path.dirname(domestic_path), exist_ok=True)
+        os.makedirs(os.path.dirname(consolidated_path), exist_ok=True)
         
-        # 국제선 데이터가 있는 경우에만 international 폴더 생성 및 저장
-        if not data_sets["international_departure"].empty or not data_sets["international_arrival"].empty:
-            international_path = os.path.join(base_path, "international")
-            os.makedirs(international_path, exist_ok=True)
-            
-            # 국제선 출발 데이터 저장
-            if not data_sets["international_departure"].empty:
-                departure_path = os.path.join(international_path, "international_departure.xlsx")
-                with pd.ExcelWriter(departure_path, engine='openpyxl') as writer:
-                    data_sets["international_departure"].to_excel(writer, sheet_name='運航候補データ', index=False)
-                print(f"✅ 국제선 출발 데이터 저장: {departure_path} ({len(data_sets['international_departure'])}건)")
-            
-            # 국제선 도착 데이터 저장
-            if not data_sets["international_arrival"].empty:
-                arrival_path = os.path.join(international_path, "international_arrival.xlsx")
-                with pd.ExcelWriter(arrival_path, engine='openpyxl') as writer:
-                    data_sets["international_arrival"].to_excel(writer, sheet_name='運航候補データ', index=False)
-                print(f"✅ 국제선 도착 데이터 저장: {arrival_path} ({len(data_sets['international_arrival'])}건)")
+        # 국제 출발 데이터 저장
+        data_sets["international_departure"].to_csv(departure_path, index=False, encoding='utf-8-sig')
+        print(f"✅ 국제 출발 데이터 CSV 저장 완료: {departure_path}")
         
-        # 국내선 데이터가 있는 경우에만 domestic 폴더 생성 및 저장
-        if not data_sets["domestic"].empty:
-            domestic_path = os.path.join(base_path, "domestic")
-            os.makedirs(domestic_path, exist_ok=True)
-            
-            domestic_path = os.path.join(domestic_path, "domestic_all.xlsx")
-            with pd.ExcelWriter(domestic_path, engine='openpyxl') as writer:
-                data_sets["domestic"].to_excel(writer, sheet_name='運航候補データ', index=False)
-            print(f"✅ 국내선 데이터 저장: {domestic_path} ({len(data_sets['domestic'])}건)")
+        # 국제 도착 데이터 저장
+        data_sets["international_arrival"].to_csv(arrival_path, index=False, encoding='utf-8-sig')
+        print(f"✅ 국제 도착 데이터 CSV 저장 완료: {arrival_path}")
+        
+        # 국내 데이터 저장
+        data_sets["domestic"].to_csv(domestic_path, index=False, encoding='utf-8-sig')
+        print(f"✅ 국내 데이터 CSV 저장 완료: {domestic_path}")
         
         # 통합 데이터 생성 및 저장 (실제 데이터가 있는 것만)
         all_data = []
@@ -747,10 +734,10 @@ class CandidateDataGenerator:
         
         if all_data:
             consolidated_df = pd.concat(all_data, ignore_index=True)
-            consolidated_path = os.path.join(consolidated_path, "consolidated_all.xlsx")
-            with pd.ExcelWriter(consolidated_path, engine='openpyxl') as writer:
-                consolidated_df.to_excel(writer, sheet_name='運航候補データ', index=False)
-            print(f"✅ 통합 데이터 저장: {consolidated_path} ({len(consolidated_df)}건)")
+            consolidated_df.to_csv(consolidated_path, index=False, encoding='utf-8-sig')
+            print(f"✅ 통합 데이터 CSV 저장 완료: {consolidated_path} ({len(consolidated_df)}건)")
+        else:
+            print("⚠️ 통합할 데이터가 없습니다.")
         
         print(f"🎉 {airline_id} 모든 데이터 저장 완료!")
 

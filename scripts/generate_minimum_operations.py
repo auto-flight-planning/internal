@@ -48,11 +48,11 @@ class MinimumOperationsGenerator:
         # 국제선 출발 데이터에서 노선 추출
         international_path = os.path.join(
             self.output_dir, airline_id, "analytics_data", "candidate", 
-            "international", "international_departure.xlsx"
+            "international_departure.csv"
         )
         
         if os.path.exists(international_path):
-            df = pd.read_excel(international_path)
+            df = pd.read_csv(international_path)
             # 고유한 노선만 추출 (출발공항 + 도착공항 기준)
             unique_international = df[['出発空港', '到着空港', '出発国家', '到着国家']].drop_duplicates()
             
@@ -68,11 +68,11 @@ class MinimumOperationsGenerator:
         # 국내선 데이터에서 노선 추출
         domestic_path = os.path.join(
             self.output_dir, airline_id, "analytics_data", "candidate", 
-            "domestic", "domestic_all.xlsx"
+            "domestic.csv"
         )
         
         if os.path.exists(domestic_path):
-            df = pd.read_excel(domestic_path)
+            df = pd.read_csv(domestic_path)
             # 고유한 노선만 추출 (출발공항 + 도착공항 기준)
             unique_domestic = df[['出発空港', '到着空港', '出発国家', '到着国家']].drop_duplicates()
             
@@ -357,18 +357,10 @@ class MinimumOperationsGenerator:
         """운항 최소 배분 기준 데이터를 Excel로 저장"""
         print(f"💾 {airline_id} 데이터 저장 시작...")
         
-        output_path = os.path.join(
-            self.output_dir, airline_id, "analytics_data", 
-            "monthly_minimum_operations_standard.xlsx"
-        )
-        
-        # analytics_data 폴더가 없으면 생성
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='運航最小配分基準', index=False)
-        
-        print(f"✅ 데이터 저장 완료: {output_path}")
+        # CSV 파일로 저장
+        output_path = os.path.join(self.output_dir, airline_id, "monthly_minimum_operations_standard.csv")
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"✅ {airline_id} 월별 최소 운항 기준 CSV 저장 완료: {output_path}")
     
     def generate_all_airlines(self):
         """모든 항공사의 운항 최소 배분 기준 데이터 생성"""

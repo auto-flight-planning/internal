@@ -98,12 +98,12 @@ class AirportScheduleDataGenerator:
         
         # minimum_operations 엑셀 파일 경로
         minimum_path = os.path.join(
-            self.output_dir, airline_id, "analytics_data", 
-            "monthly_minimum_operations_standard.xlsx"
+            self.output_dir, airline_id, 
+            "monthly_minimum_operations_standard.csv"
         )
         
         if os.path.exists(minimum_path):
-            df = pd.read_excel(minimum_path)
+            df = pd.read_csv(minimum_path)
             
             # 출발공항과 도착공항 모두 추가
             airports.update(df['出発空港'].unique())
@@ -116,17 +116,17 @@ class AirportScheduleDataGenerator:
         """candidate 엑셀에서 해당 월의 일수 확인"""
         print(f"📅 {airline_id} 월별 일수 확인 중...")
         
-        # candidate 엑셀 파일들 확인
+        # candidate CSV 파일들 확인
         candidate_paths = [
-            os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "international", "international_departure.xlsx"),
-            os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "domestic", "domestic_all.xlsx")
+            os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "international_departure.csv"),
+            os.path.join(self.output_dir, airline_id, "analytics_data", "candidate", "domestic.csv")
         ]
         
         max_day = 28  # 기본값
         
         for path in candidate_paths:
             if os.path.exists(path):
-                df = pd.read_excel(path)
+                df = pd.read_csv(path)
                 if '日付' in df.columns:
                     # 마지막 row의 일수 확인
                     last_date = df['日付'].iloc[-1]
@@ -253,18 +253,10 @@ class AirportScheduleDataGenerator:
         """항공사별 연계공항 운항일정 데이터 저장"""
         print(f"💾 {airline_id} 데이터 저장 시작...")
         
-        output_path = os.path.join(
-            self.output_dir, airline_id, 
-            "airport_schedule_data.xlsx"
-        )
-        
-        # airline 폴더가 없으면 생성
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='連携空港運航日程', index=False)
-        
-        print(f"✅ 데이터 저장 완료: {output_path}")
+        # CSV 파일로 저장
+        output_path = os.path.join(self.output_dir, airline_id, "airport_schedule_data.csv")
+        df.to_csv(output_path, index=False, encoding='utf-8-sig')
+        print(f"✅ {airline_id} 공항 스케줄 데이터 CSV 저장 완료: {output_path}")
     
     def generate_all_airlines(self):
         """모든 항공사의 연계공항 운항일정 데이터 생성"""
